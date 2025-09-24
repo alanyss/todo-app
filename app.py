@@ -1,1 +1,1 @@
-"print('App avec footer')" 
+print("App avec footer et contact")
