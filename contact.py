@@ -1,1 +1,2 @@
-"def contact():\n    return 'Page de contact'" 
+def contact():
+    return "Page de contact"
