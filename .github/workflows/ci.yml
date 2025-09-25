@@ -8,23 +8,43 @@ on:
 
 jobs:
   test:
-    name: Tests (pytest)
+    name: tests
     runs-on: ubuntu-latest
-
     steps:
-      - name: Récupérer le code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Installer Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Installer les dépendances
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Lancer les tests
+      - name: Run tests
+        run: pytest -q
+
+      - name: Notify Discord (success)
+        if: ${{ success() }}
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
         run: |
-          pytest -q
+          jq -n --arg content ":white_check_mark: CI OK — ${{ github.workflow }} on *$BRANCH* by *$ACTOR*. [Logs]($RUN_URL)" \
+            '{content: $content}' | curl -sS -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"
+
+      - name: Notify Discord (failure)
+        if: ${{ failure() }}
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BRANCH: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          jq -n --arg content ":x: CI FAIL — ${{ github.workflow }} on *$BRANCH* by *$ACTOR*. [Logs]($RUN_URL)" \
+            '{content: $content}' | curl -sS -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"
