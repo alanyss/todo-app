@@ -1,0 +1,54 @@
+- name: Deploy ToDo App to Docker target
+  hosts: targets
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install dependencies (git, python, pip)
+      apt:
+        name:
+          - git
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Ensure destination directory exists
+      file:
+        path: /opt/todo-app
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: '0755'
+
+    - name: Clone repo (branch dev)
+      git:
+        repo: https://github.com/alanyss/todo-app.git
+        dest: /opt/todo-app
+        version: dev
+        force: yes
+
+    - name: Install Python requirements (pytest)
+      pip:
+        requirements: /opt/todo-app/requirements.txt
+        executable: pip3
+
+    - name: Run app.py
+      command: python3 app.py
+      args:
+        chdir: /opt/todo-app
+      register: app_output
+
+    - debug:
+        var: app_output.stdout
+
+    - name: Run tests
+      command: pytest -q
+      args:
+        chdir: /opt/todo-app
+      register: test_output
+      ignore_errors: yes
+
+    - debug:
+        var: test_output.stdout
