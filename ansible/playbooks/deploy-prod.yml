@@ -1,0 +1,7 @@
+- name: Deploy on PROD
+  hosts: web
+  gather_facts: false
+  vars:
+    env_name: PROD
+  roles:
+    - role: app

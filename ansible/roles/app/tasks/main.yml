@@ -1,0 +1,85 @@
+---
+# ansible/roles/app/tasks/main.yml
+
+- name: (bootstrap) ensure python3 present
+  become: yes
+  apt:
+    name: python3
+    state: present
+    update_cache: yes
+
+- name: Update apt cache
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Install packages (nginx, git, pip)
+  become: yes
+  apt:
+    name:
+      - nginx
+      - git
+      - python3-pip
+    state: present
+
+- name: Ensure work dir
+  become: yes
+  file:
+    path: /opt/todo-app
+    state: directory
+    owner: ansible
+    group: ansible
+    mode: "0755"
+
+- name: Clone/Update repo
+  become: yes
+  become_user: ansible
+  git:
+    repo: https://github.com/alanyss/todo-app.git
+    dest: /opt/todo-app
+    version: "{{ branch | default('dev') }}"
+    force: yes
+
+- name: Install python requirements
+  become: yes
+  pip:
+    requirements: /opt/todo-app/requirements.txt
+    executable: pip3
+
+- name: Run app.py
+  command: python3 app.py
+  args:
+    chdir: /opt/todo-app
+  register: app_output
+
+- debug:
+    var: app_output.stdout
+
+- name: Run tests
+  command: python3 -m pytest -q
+  args:
+    chdir: /opt/todo-app
+  register: test_output
+
+- debug:
+    var: test_output.stdout
+
+- name: Deploy index.html
+  become: yes
+  template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    owner: www-data
+    group: www-data
+    mode: "0644"
+  vars:
+    build_env: "{{ env_name | default('DEV') }}"
+    tests: "{{ test_output }}"                # objet complet pour {{ tests.stdout }}
+    test_result: "{{ test_output.stdout | default('') }}"
+
+- name: Ensure nginx is running
+  become: yes
+  service:
+    name: nginx
+    state: started
+    enabled: yes
