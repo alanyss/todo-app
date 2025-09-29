@@ -1,0 +1,65 @@
+name: CD
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch: {}   # permet de lancer à la main depuis l'onglet Actions
+
+jobs:
+  deploy-dev:
+    name: Deploy DEV
+    runs-on: [self-hosted, Windows]   # ton runner
+    if: github.ref == 'refs/heads/dev'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # (optionnel mais pratique) préparer l'infra docker côté hôte
+      - name: Prepare Docker infra (network + image + containers)
+        shell: pwsh
+        run: |
+          docker network inspect cicd-net 2>$null | Out-Null; if ($LASTEXITCODE -ne 0) { docker network create cicd-net }
+          if (-not (docker images -q app-sshd)) { docker build -t app-sshd infra/server }
+          if (-not (docker ps -a --format "{{.Names}}" | Select-String -SimpleMatch "server-dev")) {
+            docker run -d --name server-dev  --network cicd-net -p 2222:22 app-sshd
+          }
+          if (-not (docker ps -a --format "{{.Names}}" | Select-String -SimpleMatch "server-prod")) {
+            docker run -d --name server-prod --network cicd-net -p 2200:22 app-sshd
+          }
+
+      - name: Deploy to DEV with Ansible (inside Docker)
+        shell: pwsh
+        run: |
+          docker run --rm --network cicd-net -v "${{ github.workspace }}:/work" -w /work python:3.11-slim bash -lc @'
+            set -e
+            apt-get update && apt-get install -y openssh-client sshpass git
+            python -m pip install --no-cache-dir --upgrade pip
+            pip install --no-cache-dir ansible
+            ansible --version
+            ansible-playbook -i ansible/inventory/dev.ini ansible/playbooks/deploy-dev.yml \
+              -e ansible_password="${{ secrets.DEV_SSH_PASSWORD }}"
+          '@
+
+  deploy-prod:
+    name: Deploy PROD
+    runs-on: [self-hosted, Windows]
+    needs: deploy-dev
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to PROD with Ansible (inside Docker)
+        shell: pwsh
+        run: |
+          docker run --rm --network cicd-net -v "${{ github.workspace }}:/work" -w /work python:3.11-slim bash -lc @'
+            set -e
+            apt-get update && apt-get install -y openssh-client sshpass git
+            python -m pip install --no-cache-dir --upgrade pip
+            pip install --no-cache-dir ansible
+            ansible --version
+            ansible-playbook -i ansible/inventory/prod.ini ansible/playbooks/deploy-prod.yml \
+              -e ansible_password="${{ secrets.PROD_SSH_PASSWORD }}"
+          '@
