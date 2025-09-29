@@ -1,0 +1,7 @@
+- name: Deploy on DEV
+  hosts: web
+  gather_facts: false
+  vars:
+    env_name: DEV
+  roles:
+    - role: app
